@@ -11,7 +11,7 @@ final class LaravelServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(
-            __DIR__ . '/../config/octane.php',
+            \dirname(__DIR__) . '/resources/config/octane.php',
             'octane'
         );
     }
@@ -19,8 +19,8 @@ final class LaravelServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->publishes([
-            __DIR__ . '/../config/octane.php' => config_path('octane.php'),
-            __DIR__ . '/../stubs/boson' => base_path('boson'),
+            \dirname(__DIR__) . '/resources/config/octane.php' => config_path('octane.php'),
+            \dirname(__DIR__) . '/resources/stubs/boson' => base_path('boson'),
         ]);
     }
 }

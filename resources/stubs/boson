@@ -1,0 +1,169 @@
+#!/usr/bin/env php
+<?php
+
+use Boson\Application;
+use Boson\ApplicationCreateInfo;
+use Boson\Bridge\Laravel\Http\LaravelHttpAdapter;
+use Boson\Component\Http\Static\FilesystemStaticProvider;
+use Boson\WebView\Api\Schemes\Event\SchemeRequestReceived;
+use Boson\Window\WindowCreateInfo;
+use Boson\Bridge\Laravel\Provider\Worker;
+use Laravel\Octane\ApplicationFactory;
+use Laravel\Octane\RequestContext;
+
+$basePath = __DIR__;
+
+require $basePath . '/vendor/autoload.php';
+require $basePath . '/vendor/laravel/octane/fixes/fix-symfony-dd.php';
+
+define('LARAVEL_START', microtime(true));
+
+ini_set('display_errors', 'stderr');
+
+$_ENV['APP_RUNNING_IN_CONSOLE'] = false;
+
+
+/**
+ * -----------------------------------------------------------------------------
+ *  Octane Application Factory
+ * -----------------------------------------------------------------------------
+ *
+ * Provides an Octane core that allows to create a new
+ * Laravel Application instance.
+ *
+ */
+
+$factory = new ApplicationFactory($basePath);
+
+
+/**
+ * -----------------------------------------------------------------------------
+ *   HTTP Adapter
+ * -----------------------------------------------------------------------------
+ *
+ * Provides bridge (adapter & converter) between Boson HTTP subsystem
+ * and Laravel HTTP Kernel.
+ *
+ */
+
+$bridge = new LaravelHttpAdapter();
+
+
+/**
+ * -----------------------------------------------------------------------------
+ *   FS Static Provider
+ * -----------------------------------------------------------------------------
+ *
+ * Provides functionality for accessing files on the local
+ * file system based on HTTP requests.
+ *
+ */
+
+$static = new FilesystemStaticProvider([
+    __DIR__ . '/public',
+]);
+
+
+/**
+ * -----------------------------------------------------------------------------
+ *   Boson Application
+ * -----------------------------------------------------------------------------
+ *
+ * Creates a new Boson Application.
+ *
+ * Don't be afraid to modify the configuration!
+ *
+ */
+
+$boson = new Application(new ApplicationCreateInfo(
+    /**
+     * @link https://bosonphp.com/doc/master/schemes-api#registration
+     */
+    schemes: [ 'laravel' ],
+    /**
+     * @link https://bosonphp.com/doc/master/application-configuration#debug-mode
+     */
+    debug: false,
+    /**
+     * @link https://bosonphp.com/doc/master/window-configuration
+     */
+    window: new WindowCreateInfo(
+        /**
+         * @link https://bosonphp.com/doc/master/window-configuration#window-size-width-and-height
+         */
+        width: 1400,
+        /**
+         * @link https://bosonphp.com/doc/master/window-configuration#window-size-width-and-height
+         */
+        height: 800,
+    ),
+));
+
+
+/**
+ * -----------------------------------------------------------------------------
+ *   Octane Worker
+ * -----------------------------------------------------------------------------
+ *
+ * Create and boot an Octane worker that manages the processing
+ * of each request and the state of the application.
+ *
+ */
+
+$worker = new Worker($factory, $boson);
+$worker->boot();
+
+
+/**
+ * -----------------------------------------------------------------------------
+ *   Request Handler
+ * -----------------------------------------------------------------------------
+ *
+ * Process all "request" events from Boson Application.
+ *
+ * @link https://bosonphp.com/doc/master/schemes-api#requests-interception
+ *
+ */
+
+$boson->on(function (SchemeRequestReceived $e) use ($bridge, $static, $worker): void {
+    //
+    // Install file (if exists) as response using static adapter...
+    //
+    if ($e->response = $static->findFileByRequest($e->request)) {
+        $e->stopPropagation();
+
+        return;
+    }
+
+    //
+    // Convert from Boson Request to Laravel Request...
+    //
+    $request = $bridge->createRequest($e->request);
+
+    //
+    // Sending a request to the Octane Worker...
+    //
+    $worker->handle($request, new RequestContext());
+
+    //
+    // As a response install Response from Laravel HTTP
+    // Kernel in case of the file does not exist...
+    //
+    $e->response = $bridge->createResponse($worker->getResponse());
+});
+
+
+/**
+ * -----------------------------------------------------------------------------
+ *   Fire Request
+ * -----------------------------------------------------------------------------
+ *
+ * Go to the specified address, which in turn initializes the
+ * first event of the incoming request.
+ *
+ * @link https://bosonphp.com/doc/master/webview#url-navigation
+ *
+ */
+
+$boson->webview->url = 'laravel://app';
+
